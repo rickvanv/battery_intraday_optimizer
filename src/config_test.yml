@@ -1,0 +1,9 @@
+initial_soc: 0.5
+capacity: 10
+battery_size_hours: 1
+charge_efficiency: 0.8
+discharge_efficiency: 0.8
+time_step: 0.25
+N_timesteps: 30 
+N_trading_timesteps: 30
+N_daily_cycles_max: 1
