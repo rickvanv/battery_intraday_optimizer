@@ -2,3 +2,9 @@ avro
 python-snappy
 pandas
 numpy
+pyyaml
+scipy
+pyomo
+matplotlib
+seaborn
+plotly
