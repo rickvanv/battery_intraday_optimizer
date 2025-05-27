@@ -4,3 +4,4 @@ src/price_modelling/__pycache__/global_keys.cpython-312.pyc
 src/price_modelling/__pycache__/price_path_generator.cpython-312.pyc
 pyproject.toml
 data/all_VWAP_ID1_data.csv
+data/all_VWAP_DA_data.csv
