@@ -52,7 +52,7 @@ class IDPriceSimulator:
         df_delivery_start_dict = {
             delivery_start_time: df_data_season.loc[
                 df_data_season["delivery_start_time"] == delivery_start_time
-            ]
+            ].copy()
             for delivery_start_time in self._delivery_start_times
         }
 
@@ -194,17 +194,40 @@ class IDPriceSimulator:
         plt.savefig("corr_matrix_all_seasons.eps", format="eps")
         plt.show()
 
-    def mu_plot(self, season):
+    def param_plot(self, season):
         mu_s = np.array(
             [
                 self._ou_fits[season][delivery_time]["mu"]
                 for delivery_time in self._delivery_start_times
             ]
         )  # Shape: (96,)
+        theta_s = np.array(
+            [
+                self._ou_fits[season][delivery_time]["theta"]
+                for delivery_time in self._delivery_start_times
+            ]
+        )
+        sigma_s = np.array(
+            [
+                self._ou_fits[season][delivery_time]["sigma"]
+                for delivery_time in self._delivery_start_times
+            ]
+        )
+
+        # Create a Pandas DataFrame
+        df_params = pd.DataFrame(
+            {
+                "delivery_start_time": self._delivery_start_times,
+                r"$\mu$": mu_s,
+                r"$\theta$": theta_s,
+                r"$\sigma$": sigma_s,
+            }
+        )
         fig = px.line(
-            x=self._delivery_start_times,
-            y=mu_s,
-            title="μ versus delivery start time",
+            df_params,
+            x="delivery_start_time",
+            y=[r"$\mu$", r"$\theta$", r"$\sigma$"],
+            title="μ, θ, and σ versus delivery start time",
         )
         fig.update_layout(
             # yaxis_title='μ',

@@ -10,18 +10,18 @@ class RollingIntrinsicStrategy(BaseStrategy):
     generate correlated paths for different delivery start times.
     """
 
-    def __init__(self, battery, price_path_array, config):
+    def __init__(self, battery, price_path, config):
         # TODO: add logging statements
         """
         Initialize the RollingIntrinsic strategy.
 
         Args:
             battery: An instance of your Battery class.
-            price_path_array: numpy array of price paths.
+            price_path: numpy array of price path.
             config: Dictionary of configuration parameters.
         """
-        super().__init__(battery, price_path_array, config)
-        self.price_path_array = price_path_array
+        super().__init__(battery, config)
+        self.price_path = price_path
         self.optimized_paths = None
         self.N_timesteps = config["N_timesteps"]
         self.results = np.zeros(config["N_trading_timesteps"])
@@ -37,7 +37,7 @@ class RollingIntrinsicStrategy(BaseStrategy):
         return (
             self.power_schedule,
             self.soc_schedule,
-            self.price_path_array,
+            self.price_path,
             self.results,
         )
 
@@ -46,7 +46,7 @@ class RollingIntrinsicStrategy(BaseStrategy):
         Optimize battery operation on price path.
         """
 
-        initial_price_path = self.price_path_array[0, :, :]
+        initial_price_path = self.price_path
 
         # Initialize battery schedule and SOC
         self.battery.power_schedule = np.zeros(np.shape(initial_price_path)[1])
@@ -78,7 +78,7 @@ class RollingIntrinsicStrategy(BaseStrategy):
             )
 
             # solve optimization problem
-            results = pyo.SolverFactory("glpk").solve(model)
+            results = pyo.SolverFactory("gurobi").solve(model)
 
             # Check if the solve was successful before accessing results
             if (results.solver.status == pyo.SolverStatus.ok) and (
@@ -399,10 +399,6 @@ class RollingIntrinsicStrategy(BaseStrategy):
         model.N_cycles_calculation_constraint = pyo.Constraint(
             rule=N_cycles_rule
         )
-
-        # model.N_cycles_limit_constraint = pyo.Constraint(
-        #     rule=lambda model: model.N_cycles <= model.N_cycles_max
-        # )
 
         # --- OBJECTIVE ---
         # Assuming revenue is from power exported to the grid and cost is from power imported from the grid.

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 
 class BaseStrategy(ABC):
-    def __init__(self, battery, price_path_array, config):
+    def __init__(self, battery, config):
         """
         Abstract base for battery trading strategies.
 
@@ -12,7 +12,6 @@ class BaseStrategy(ABC):
             config: Dictionary of configuration parameters.
         """
         self.battery = battery
-        self.price_path_array = price_path_array
         self.config = config
 
     @abstractmethod
