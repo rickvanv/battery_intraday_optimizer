@@ -6,3 +6,4 @@ pyproject.toml
 data/all_VWAP_ID1_data.csv
 data/all_VWAP_DA_data.csv
 src/optimization/__pycache__/rolling_intrinsic.cpython-312.pyc
+data/all_VWAP_DA_data_spring.csv
