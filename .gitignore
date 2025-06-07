@@ -7,3 +7,14 @@ data/all_VWAP_ID1_data.csv
 data/all_VWAP_DA_data.csv
 src/optimization/__pycache__/rolling_intrinsic.cpython-312.pyc
 data/all_VWAP_DA_data_spring.csv
+DA_prices_day_test.csv
+.vscode/launch.json
+battery_intraday_trading.egg-info/dependency_links.txt
+battery_intraday_trading.egg-info/PKG-INFO
+battery_intraday_trading.egg-info/SOURCES.txt
+battery_intraday_trading.egg-info/top_level.txt
+src/price_modelling/__pycache__/__init__.cpython-312.pyc
+src/optimization/__pycache__/__init__.cpython-312.pyc
+src/battery/__pycache__/__init__.cpython-312.pyc
+src/optimization/__pycache__/LSM.cpython-312.pyc
+src/__pycache__/__init__.cpython-312.pyc

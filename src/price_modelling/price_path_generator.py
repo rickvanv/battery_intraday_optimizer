@@ -4,20 +4,20 @@ from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
-from price_modelling.global_keys import *
+from .global_keys import *
 
 
 class IDPriceSimulator:
     # TODO: add logging statements
-    def __init__(self, model="OU"):
+    def __init__(self, config, model="OU"):
         self._model = model
         self._N_paths = 0
 
         self._corrplot = None
         self._mu_plot = None
 
-        self._T_day = 96
-        self._T_trading = 132
+        self._T_day = config["N_timesteps"]
+        self._T_trading = config["N_trading_timesteps"]
         self._paths = np.zeros((self._T_trading, self._T_day))
         self._delivery_start_times = []
 
@@ -27,7 +27,6 @@ class IDPriceSimulator:
     def fit_model(self, df_data: pd.DataFrame):
         if self._model == "OU":
             self.fit_OU_model_seasons(df_data)
-            self._DA_prices = df_data[["delivery_start", "DA_price"]].copy()
 
     def fit_OU_model_seasons(self, df_data: pd.DataFrame):
         self._ou_fits = {}
@@ -306,7 +305,9 @@ class IDPriceSimulator:
         plt.savefig("mu_all_seasons.eps", format="eps")
         plt.show()
 
-    def generate_price_paths(self, season: str, N_paths: int):
+    def generate_price_paths(
+        self, season: str, N_paths: int, df_DA_prices: pd.DataFrame
+    ):
         """
         Generate price paths for a given season and number of paths.
 
@@ -319,29 +320,19 @@ class IDPriceSimulator:
         """
         # check if the model is set to "OU"
         if self._model == "OU":
-            return self.generate_OU_paths(season, N_paths, self._DA_prices)
+            if len(df_DA_prices) != self._T_day:
+                raise ValueError(
+                    "df_DA_prices must be provided and have length {self._T_day}."
+                )
+
+            return self.generate_OU_paths(season, N_paths, df_DA_prices)
+
         else:
             raise ValueError(f"Model {self._model} not supported yet.")
 
     def generate_OU_paths(
-        self, season: str, N_paths: int, DA_prices: np.array
+        self, season: str, N_paths: int, df_DA_prices: pd.DataFrame
     ):
-        # Sample a random day from the DA_prices dataframe
-        random_day = DA_prices["delivery_start"].dt.date.sample(1).values[0]
-        DA_prices_day = DA_prices[
-            DA_prices["delivery_start"].dt.date == random_day
-        ]
-        # Remove duplicate delivery start times
-        DA_prices_day = DA_prices_day.drop_duplicates(
-            subset=["delivery_start"]
-        )
-
-        # Check if DA_prices is of correct length
-        if len(DA_prices_day) != self._T_day:
-            raise ValueError(
-                f"DA_prices should have length {self._T_day}, but got {len(DA_prices_day)}"
-            )
-
         # Extract parameters
         mu_s = np.array(
             [
@@ -387,8 +378,8 @@ class IDPriceSimulator:
                 P[m, t] = W[t + (self._T_trading - self._T_day), t]
 
                 # Add the DA price to the price path
-                P[m, t] += DA_prices_day["DA_price"].values[t]
-                W_array[m, :, t] += DA_prices_day["DA_price"].values[t]
+                P[m, t] += df_DA_prices["DA_price"].values[t]
+                W_array[m, :, t] += df_DA_prices["DA_price"].values[t]
 
         return W_array, P
 
