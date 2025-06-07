@@ -1,5 +1,5 @@
 import numpy as np
-from optimization.base_strategy import BaseStrategy
+from src.optimization.base_strategy import BaseStrategy
 import pyomo.environ as pyo
 
 
@@ -24,21 +24,27 @@ class RollingIntrinsicStrategy(BaseStrategy):
         self.price_path = price_path
         self.optimized_paths = None
         self.N_timesteps = config["N_timesteps"]
-        self.results = np.zeros(config["N_trading_timesteps"])
+        self.results = np.zeros(config["N_timesteps"])
 
     def run(self):
         """
         Execute the trading strategy over the simulation period.
         Must return a pandas DataFrame with at least: time, action, soc, price.
         """
-        self.results, self.power_schedule, self.soc_schedule = (
-            self.optimize_on_path()
-        )
+        (
+            self.results,
+            self.power_committed,
+            self.power_incremental_schedules,
+            self.soc_schedule,
+            cycle_count,
+        ) = self.optimize_on_path()
         return (
-            self.power_schedule,
+            self.power_committed,
+            self.power_incremental_schedules,
             self.soc_schedule,
             self.price_path,
             self.results,
+            cycle_count,
         )
 
     def optimize_on_path(self):
@@ -49,8 +55,13 @@ class RollingIntrinsicStrategy(BaseStrategy):
         initial_price_path = self.price_path
 
         # Initialize battery schedule and SOC
-        self.battery.power_schedule = np.zeros(np.shape(initial_price_path)[1])
+        self.battery.power_committed = np.zeros(
+            np.shape(initial_price_path)[1]
+        )
         self.battery.power_schedules = np.zeros(np.shape(initial_price_path))
+        self.battery.power_incremental_schedules = np.zeros(
+            np.shape(initial_price_path)
+        )
         self.battery.soc_schedules = np.zeros(
             [
                 np.shape(initial_price_path)[0],
@@ -59,7 +70,7 @@ class RollingIntrinsicStrategy(BaseStrategy):
         )
 
         # Optimize on each timestep
-        for t in range(np.size(initial_price_path, 0)):
+        for t in range(np.shape(initial_price_path)[0]):
             remaining_window_size_start = max(
                 0,
                 (
@@ -78,7 +89,7 @@ class RollingIntrinsicStrategy(BaseStrategy):
             )
 
             # solve optimization problem
-            results = pyo.SolverFactory("gurobi").solve(model)
+            results = pyo.SolverFactory("glpk").solve(model)
 
             # Check if the solve was successful before accessing results
             if (results.solver.status == pyo.SolverStatus.ok) and (
@@ -94,32 +105,36 @@ class RollingIntrinsicStrategy(BaseStrategy):
                 power_flow_out_of_battery_values = np.array(
                     list(model.power_flow_out_of_battery.get_values().values())
                 )
+                power_charge_values = np.array(
+                    list(model.power_charge.get_values().values())
+                )
+                power_discharge_values = np.array(
+                    list(model.power_discharge.get_values().values())
+                )
 
                 self.battery.update_soc_schedule(
                     t,
                     soc_values,
                     initial_price_path,
                 )
-                self.battery.update_power_schedule(
+                self.battery.update_power_committed(
                     t,
                     power_flow_into_battery_values,
                     power_flow_out_of_battery_values,
                     initial_price_path,
                 )
-                # if t == 46:
-                #     print("we are here")
 
                 if (self.N_timesteps - len(remaining_price_path)) > 0:
                     self.battery.N_cycles_till_now = (
                         (
                             sum(
-                                self.battery.power_discharging_schedule[
+                                self.battery.power_discharging_committed[
                                     : (t - 36) + 1
                                 ]
                             )
                             / self.battery.discharge_efficiency
                             + sum(
-                                self.battery.power_charging_schedule[
+                                self.battery.power_charging_committed[
                                     : (t - 36) + 1
                                 ]
                             )
@@ -127,11 +142,9 @@ class RollingIntrinsicStrategy(BaseStrategy):
                         )
                         * self.battery.time_step
                         / 2.0
-                    ) - 1e-3
+                    ) - 1e-6
 
-                self.results[t] = self.results[t - 1] + pyo.value(
-                    model.objective
-                )
+                self.results[t] = pyo.value(model.objective)
 
             else:
                 print(
@@ -141,14 +154,20 @@ class RollingIntrinsicStrategy(BaseStrategy):
                 break
 
             self.battery.power_schedules[t, :] = (
-                -self.battery.power_charging_schedule
-                + self.battery.power_discharging_schedule
+                -self.battery.power_charging_committed
+                + self.battery.power_discharging_committed
             )
+            # self.battery.power_incremental_schedules[t, t:] = (
+            #     -power_charge_values + power_discharge_values
+            # )
             self.battery.soc_schedules[t, :] = self.battery.soc_schedule
+
         return (
             self.results,
             self.battery.power_schedules,
+            self.battery.power_incremental_schedules,
             self.battery.soc_schedules,
+            self.battery.N_cycles_till_now,
         )
 
     def define_pyomo_model(
@@ -174,12 +193,9 @@ class RollingIntrinsicStrategy(BaseStrategy):
         model.initial_soc_schedule = pyo.Param(
             model.T_plus_one,
             within=pyo.NonNegativeReals,
-            initialize=np.maximum(
-                self.battery.soc_schedule[
-                    (self.N_timesteps - optimization_window_timesteps) :
-                ],
-                0,
-            ),
+            initialize=self.battery.soc_schedule[
+                self.N_timesteps - optimization_window_timesteps :
+            ],
         )  # Initial SoC for this window
         model.time_step_duration = pyo.Param(
             within=pyo.NonNegativeReals, default=self.battery.time_step
@@ -189,7 +205,7 @@ class RollingIntrinsicStrategy(BaseStrategy):
             within=pyo.NonNegativeReals,
             initialize=np.maximum(
                 self.battery.capacity_normalized * np.ones(len(model.T))
-                - self.battery.power_schedule[
+                - self.battery.power_committed[
                     (self.N_timesteps - optimization_window_timesteps) :
                 ],
                 0,
@@ -200,7 +216,7 @@ class RollingIntrinsicStrategy(BaseStrategy):
             within=pyo.NonNegativeReals,
             initialize=np.maximum(
                 self.battery.capacity_normalized * np.ones(len(model.T))
-                + self.battery.power_schedule[
+                + self.battery.power_committed[
                     (self.N_timesteps - optimization_window_timesteps) :
                 ],
                 0,
@@ -218,17 +234,17 @@ class RollingIntrinsicStrategy(BaseStrategy):
         )
 
         # Schedule for this window (ensure this slice is correct)
-        model.power_charging_schedule = pyo.Param(
+        model.power_charging_committed = pyo.Param(
             model.T,
             within=pyo.Reals,
-            initialize=self.battery.power_charging_schedule[
+            initialize=self.battery.power_charging_committed[
                 (self.N_timesteps - optimization_window_timesteps) :
             ],
         )
-        model.power_discharging_schedule = pyo.Param(
+        model.power_discharging_committed = pyo.Param(
             model.T,
             within=pyo.Reals,
-            initialize=self.battery.power_discharging_schedule[
+            initialize=self.battery.power_discharging_committed[
                 (self.N_timesteps - optimization_window_timesteps) :
             ],
         )
@@ -266,6 +282,14 @@ class RollingIntrinsicStrategy(BaseStrategy):
                 0,
                 model.max_power_discharge[t_idx],
             )
+            model.power_flow_into_battery[t_idx].bounds = (
+                0,
+                self.battery.capacity_normalized,
+            )
+            model.power_flow_out_of_battery[t_idx].bounds = (
+                0,
+                self.battery.capacity_normalized,
+            )
 
         # --- CONSTRAINTS ---
         # Initial SOC constraint
@@ -293,9 +317,9 @@ class RollingIntrinsicStrategy(BaseStrategy):
             # This net power must equal the net effective flow into/out of the battery (into - out)
             return (
                 model.power_discharge[t]
-                + model.power_discharging_schedule[t]
+                + model.power_discharging_committed[t]
                 - model.power_charge[t]
-                - model.power_charging_schedule[t]
+                - model.power_charging_committed[t]
             ) == model.power_flow_out_of_battery[
                 t
             ] - model.power_flow_into_battery[
